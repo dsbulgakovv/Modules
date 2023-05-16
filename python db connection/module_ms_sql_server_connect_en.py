@@ -3,43 +3,36 @@ import urllib3
 import sqlalchemy as sa
 import urllib
 
-urllib3.disable_warnings()  # Отключение предупреждений
+urllib3.disable_warnings()  # Warnings are disabled now
 
 
-# Функция подключения к базе данных
-# Принимает два параметра server_addr - адрес сервера с БД и db_name - название БД
-# Возвращает объект - сам движок
-def db_connect(server_addr, db_name):
+# Function for connection to database
+def db_connect(server_addr, db_name): # Get two parameteres: server_addr - adress of the database server and db_name - database name
     params = urllib.parse.quote_plus("DRIVER={SQL Server};"
                                      f"SERVER={server_addr};"
                                      f"DATABASE={db_name};"
                                      "Trusted_Connection=yes;")
     engine = sa.create_engine("mssql+pyodbc:///?odbc_connect={}".format(params))
-    return engine
+    return engine # Rerurns object - connection engine itself
 
-# Вместо того, чтобы загружать все строки в память,
-# она будет загружать строки из базы данных итеративно
+# Instead of uploading all rows to the RAM instantly, the function will load rows iteratively by clusters from database
 def get_stream_conn(engine):
     conn = engine.connect().execution_options(stream_results=True)
     return conn
 
 
-# Функция отправления SQL запроса (не возвращающего ничего) на сервер с помощью pandas
-# Принимает два параметра: query - SQL запрос в строковом виде и engine - движок
-# Ничего не возвращает, только печатает статус выполнения
-def empty_query(query, engine):
+# Function for sending SQL query (returns nothing) to the server with the help of pandas
+def empty_query(query, engine): # Takes two parameters: query - SQL query as a string and engine - engine itself
     try:
         pd.read_sql(query, con=engine)
     except sa.exc.ResourceClosedError:
-        print('Completed')
+        print('Completed') # Return nothong and print status message
 
 
-# Функция создает временную таблицу в указанной БД
-# Принимает движок
-# Принимает поля, которые нжно создать в виде списка со строками ['OldLicenseId NVARCHAR(60)']
-# Принимает название временной таблицы
-# На выходе печатает статус обработанного запроса
-def create_temp_table(engine, fields, name='#TEMP'):
+# Function creates temproary table in the certain database
+def create_temp_table(engine, # Takes engine as argument
+                      fields, # Takes all needed fields to be loaded in database as a list with strings: ['OldLicenseId NVARCHAR(60)', ...]
+                      name='#TEMP'): # Takes temproary table name
     drop_temp_table(name, engine)
     temp_table_query = f'''CREATE TABLE {name} ('''
     for i in range(0, len(fields)):
@@ -52,39 +45,35 @@ def create_temp_table(engine, fields, name='#TEMP'):
     try:
         pd.read_sql(temp_table_query, con=engine)
     except sa.exc.ResourceClosedError:
-        print('Temporary table was created')
+        print('Temporary table was created') # Returns nothing and print status message
 
 
-
-# Функция sql запроса со всем содержимым таблицы
-# Принимает название таблицы и движок
-# Возвращает
-def select_all_query(table_name, engine):
+# Function for select * from the needed table
+def select_all_query(table_name, engine): # Takes table name and engine as arguments
     query_select = f'''SELECT * FROM {table_name}'''
-    df = pd.read_sql(query_select, con=engine)
-    return df
+    df = pd.read_sql(query_select, con=engine) 
+    return df # Returns pandas dataframe
 
 
-def select_top_100_query(table_name, engine):
+# Function for select top 100 rows from the needed table
+def select_top_100_query(table_name, engine): # Takes table name and engine as arguments
     query_select = f'''SELECT TOP 100 * FROM {table_name}'''
     df = pd.read_sql(query_select, con=engine)
-    return df
+    return df # Returns pandas dataframe
 
 
-# Функция sql запроса для удаления временной таблицы
-# Принимает имя таблицы и движок
-def drop_temp_table(table_name, engine):
+# Function for dropping a temproary table from the database
+def drop_temp_table(table_name, engine): # Takes temproary table name and engine as arguments
     query_drop = f'''DROP TABLE IF EXISTS {table_name}'''
     try:
         pd.read_sql(query_drop, con=engine)
     except sa.exc.ResourceClosedError:
-        print('The table was dropped')
+        print('The table was dropped') # Returns nothing and print status message
 
 
-# Функция генерации списка со всеми значениями датарейма в виде строк
-# Принимает датафрейм pandas и привращает в список строк, подходящих для SQL INSERT запроса
-# Возвращает списко со строками - значениями
-def df_to_list(init_df):
+# Function that generate a list with strings with all values from dataframe 
+# Transform dataframe to list with strings that are formatted for SQL INSERT query
+def df_to_list(init_df): # Takes dataframe as argument
     data = []
     for i in range(0, len(init_df)):
         row = "('"
@@ -94,13 +83,11 @@ def df_to_list(init_df):
             else:
                 row += str(init_df.iloc[i][j]) + "')"
         data.append(row)
-    return data
+    return data # Return a list with strings (all values from df)
 
 
-# Функция создает строку с названиями всех колонок датафрейма
-# Принимает датафрейм
-# Возвращает строку
-def get_columns_str(data):
+# Function creates a string with all column names
+def get_columns_str(data): # Takes dataframe as argument
     columns = list(data.columns)
     column_names = '('
     for x in range(0, len(columns)):
@@ -108,21 +95,16 @@ def get_columns_str(data):
             column_names += (columns[x] + ', ')
         else:
             column_names += (columns[x] + ')')
-    return column_names
+    return column_names # Returns string
 
 
-# Функция для генерации SQL запросов создания временной таблицы
-# на SQL сервере с вводом по 1000 значений за раз
-
-
-# Принимает full_data - принимает датафрейм
-# Принимает поля, которые нжно создать в виде списка со строками ['OldLicenseId NVARCHAR(60)']
-# Принимает table_name - принимает название временной таблицы в виде строки
-# Принимает engine - переменную с подключением к серверу через sqlalchemy
-def df_to_temp_table(data, fields, engine, table_name='#TEMP'):
+# Function generates SQL queries and send them to the server for creating temproary table from dataframe (sends 1000 rows at one time)
+def df_to_temp_table(data, # Takes dataframe
+                     fields, # Takes needed fieds names and its data types: ['OldLicenseId NVARCHAR(60)']
+                     engine, # Takes engine for connection to the server
+                     table_name='#TEMP'): # Takes table name (have default value)
     create_temp_table(engine, fields, table_name)
     full_data = df_to_list(data)
-#    column_names = get_columns_str(data)
     insert = f'INSERT INTO {table_name} VALUES '
     tail = len(full_data) - (len(full_data) // 1000) * 1000
     for i in range(0, (len(full_data) // 1000 + 1)):
@@ -150,4 +132,4 @@ def df_to_temp_table(data, fields, engine, table_name='#TEMP'):
                     pd.read_sql(query_insert, con=engine)
                 except sa.exc.ResourceClosedError:
                     continue
-    print(f'Data migrated to MS SQL Server as temporary table {table_name}')
+    print(f'Data migrated to MS SQL Server as temporary table {table_name}') # Return nothing and print status message
